@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  OPERATOR
+  RACER
+  TEAM_MANAGER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+  DELETED
+}
+
+enum ExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  PRO
+  ELITE
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  fullName     String
+  phone        String     @unique
+  email        String?    @unique
+  passwordHash String
+  role         UserRole   @default(RACER)
+  status       UserStatus @default(ACTIVE)
+
+  lastLoginAt DateTime?
+  deletedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile      Profile?
+  userSessions UserSession[]
+
+  @@index([role])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Profile {
+  id              Int              @id @default(autoincrement())
+  userId          Int              @unique
+  nickname        String?
+  avatarUrl       String?
+  bio             String?
+  experienceLevel ExperienceLevel?
+  isCompleted     Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([experienceLevel, userId])
+}
+
+model UserSession {
+  id Int @id @default(autoincrement())
+
+  userId           Int
+  refreshTokenHash String
+
+  ipAddress  String?
+  userAgent  String?
+  deviceName String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, userId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
