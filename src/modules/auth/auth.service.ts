@@ -167,8 +167,8 @@ export class AuthService {
     }
 
     async refresh(refreshToken_: RefreshDto) {
-        const {refreshToken}=refreshToken_
-        
+        const { refreshToken } = refreshToken_
+
         const payload = this.jwt.verifyRefreshToken(refreshToken)
 
         const user = await this.prisma.user.findUnique({

@@ -12,10 +12,9 @@ enum UserRole {
   OPERATOR
   RACER
   TEAM_MANAGER
-  VIEWER
 }
 
-enum UserStatus {
+enum Status {
   ACTIVE
   INACTIVE
   BANNED
@@ -30,14 +29,36 @@ enum ExperienceLevel {
   ELITE
 }
 
+enum VehicleStatus {
+  AVAILABLE
+  RESERVED
+  MAINTENANCE
+  DISABLED
+}
+
+enum VehicleControlType {
+  RC_CONTROLLER
+  FPV
+  STEERING_WHEEL
+  MOBILE_APP
+  SIMULATOR
+}
+
+enum VehicleMaintenanceStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
 model User {
-  id           Int        @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   fullName     String
-  phone        String     @unique
-  email        String?    @unique
+  phone        String   @unique
+  email        String?  @unique
   passwordHash String
-  role         UserRole   @default(RACER)
-  status       UserStatus @default(ACTIVE)
+  role         UserRole @default(RACER)
+  status       Status   @default(ACTIVE)
 
   lastLoginAt DateTime?
   deletedAt   DateTime?
@@ -61,13 +82,16 @@ model Profile {
   bio             String?
   experienceLevel ExperienceLevel?
   isCompleted     Boolean          @default(false)
+  status          Status           @default(ACTIVE)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
 
-  @@index([experienceLevel, userId])
+  @@index([experienceLevel])
+  @@index([userId])
+  @@index([status])
 }
 
 model UserSession {
@@ -82,14 +106,91 @@ model UserSession {
 
   expiresAt DateTime
   revokedAt DateTime?
+  status    Status    @default(ACTIVE)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
 
   @@unique([id, userId])
   @@index([userId])
   @@index([expiresAt])
   @@index([revokedAt])
+  @@index([status])
+}
+
+model RacingCategory {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique
+  description String?
+  speedRange  String?
+  trackType   String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  vehicles Vehicle[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model Vehicle {
+  id         Int @id @default(autoincrement())
+  categoryId Int
+
+  name     String
+  slug     String  @unique
+  imageUrl String?
+
+  topSpeedKmh        Int?
+  batteryLifeMinutes Int?
+  controlType        VehicleControlType?
+  difficulty         ExperienceLevel?
+  status             VehicleStatus       @default(AVAILABLE)
+
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category     RacingCategory       @relation(fields: [categoryId], references: [id])
+  maintenances VehicleMaintenance[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([difficulty])
+  @@index([controlType])
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model VehicleMaintenance {
+  id        Int @id @default(autoincrement())
+  vehicleId Int
+
+  title  String
+  reason String?
+  status VehicleMaintenanceStatus @default(OPEN)
+
+  startedAt  DateTime?
+  resolvedAt DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+
+  @@index([vehicleId])
+  @@index([status])
+  @@index([startedAt])
+  @@index([resolvedAt])
 }

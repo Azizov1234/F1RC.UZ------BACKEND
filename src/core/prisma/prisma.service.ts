@@ -7,7 +7,6 @@ import {Pool} from "pg"
  @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit,OnModuleDestroy{
     constructor(){
-        console.log(process.env.DATABASE_URL,"helloo");
         
         const connectionString= process.env.DATABASE_URL
         

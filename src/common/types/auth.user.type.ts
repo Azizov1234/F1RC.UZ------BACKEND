@@ -4,4 +4,5 @@ export type AuthUser = {
   phone: string;
   role: string;
   status: string;
+  sessionId:number
 };

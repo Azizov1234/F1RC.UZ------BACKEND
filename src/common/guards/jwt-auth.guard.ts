@@ -8,7 +8,7 @@ import {
 
 import { PrismaService } from 'src/core/prisma/prisma.service';
 import { JwtUtilsService } from 'src/common/utils/jwt.service';
-import { UserStatus } from '@prisma/client';
+import { Status } from '@prisma/client';
 
 type JwtPayload = {
   id: number;
@@ -70,20 +70,20 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('User topilmadi');
     }
 
-    if (user.status === UserStatus.INACTIVE) {
+    if (user.status === Status.INACTIVE) {
       throw new ForbiddenException('Account is inactive');
     }
 
-    if (user.status === UserStatus.BANNED) {
+    if (user.status === Status.BANNED) {
       throw new ForbiddenException('Account is banned');
     }
 
-    if (user.status === UserStatus.DELETED) {
+    if (user.status === Status.DELETED) {
       throw new ForbiddenException('Account is deleted');
     }
 
 
-    if (user.status !== UserStatus.ACTIVE) {
+    if (user.status !== Status.ACTIVE) {
       throw new ForbiddenException('Account is not active');
     }
 
