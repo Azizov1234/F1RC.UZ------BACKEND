@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,6 +9,10 @@ import { Prisma, UserRole, Status } from '@prisma/client';
 
 import { PrismaService } from 'src/core/prisma/prisma.service';
 import { BcryptUtilsService } from 'src/common/utils/bcrypt.service';
+import {
+  deleteFile,
+  deleteUploadedFile,
+} from 'src/common/functions/multer-file-upload';
 
 import { GetUsersQueryDto } from './dto/filters.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -21,55 +24,45 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bcrypt: BcryptUtilsService,
-  ) { }
+  ) {}
 
   async getAllUsers(query: GetUsersQueryDto) {
-
     const page = Math.max(Number(query.page) || 1, 1);
-
-
     const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
-
-
     const skip = (page - 1) * limit;
 
     const search = query.search?.trim();
 
     const where: Prisma.UserWhereInput = {
-
       ...(query.status ? { status: query.status } : {}),
-
-
       ...(query.role ? { role: query.role } : {}),
-
 
       ...(search
         ? {
-          OR: [
-            {
-              fullName: {
-                contains: search,
-                mode: 'insensitive',
+            OR: [
+              {
+                fullName: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
-            },
-            {
-              phone: {
-                contains: search,
+              {
+                phone: {
+                  contains: search,
+                },
               },
-            },
-            {
-              email: {
-                contains: search,
-                mode: 'insensitive',
+              {
+                email: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
               },
-            },
-          ],
-        }
+            ],
+          }
         : {}),
     };
 
     const sortBy = query.sortBy ?? 'createdAt';
-
     const sortOrder = query.sortOrder ?? 'desc';
 
     const [users, total] = await this.prisma.$transaction([
@@ -88,13 +81,11 @@ export class UsersService {
       }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
+    const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
 
     return {
       success: true,
-
       data: users.map((user) => this.formatUserListItem(user)),
-
       meta: {
         total,
         page,
@@ -132,52 +123,73 @@ export class UsersService {
     };
   }
 
-  async createUser(payload: CreateUserDto, currentUser: AuthUser) {
-
-    this.checkRoleManagePermission(payload.role, currentUser);
-
-    const fullName = payload.fullName.trim();
-    const phone = this.normalizePhone(payload.phone);
-    const email = this.normalizeEmail(payload.email);
-
-    await this.checkUniquePhoneAndEmail(phone, email);
-
-
-    const passwordHash = await this.bcrypt.generateHashPass(payload.password);
-
+  async createUser(
+    payload: CreateUserDto,
+    currentUser: AuthUser,
+    file?: Express.Multer.File,
+  ) {
     try {
-      const user = await this.prisma.user.create({
+      this.checkRoleManagePermission(payload.role, currentUser);
+
+      const fullName = payload.fullName.trim();
+      const phone = this.normalizePhone(payload.phone);
+      const email = this.normalizeEmail(payload.email);
+
+      await this.checkUniquePhoneAndEmail(phone, email);
+
+      const passwordHash = await this.bcrypt.generateHashPass(payload.password);
+
+      await this.prisma.user.create({
         data: {
           fullName,
           phone,
           email,
           passwordHash,
-
+          avatarUrl: payload.avatarUrl,
           role: payload.role,
 
           profile: {
-            create: {},
+            create: {
+              avatarUrl: payload.avatarUrl,
+              isCompleted: false,
+            },
           },
         },
-        // select: this.userDetailSelect(),
       });
-
 
       return {
         success: true,
         message: 'User created successfully. User can login with phone and password.',
       };
     } catch (error: any) {
+      await deleteUploadedFile(file);
 
-      if (error?.code === 'P2002' && error?.meta?.target.includes("phone") || error?.meta?.target.includes("email")) {
-        throw new ConflictException('Phone or email already used');
+      if (error?.code === 'P2002') {
+        const target = error?.meta?.target ?? [];
+
+        if (target.includes('phone') || target.includes('email')) {
+          throw new ConflictException('Phone or email already used');
+        }
+      }
+
+      if (
+        error instanceof ConflictException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
       }
 
       throw new InternalServerErrorException('User create failed');
     }
   }
 
-  async updateUser(id: number, payload: UpdateUserDto, currentUser: AuthUser) {
+  async updateUser(
+    id: number,
+    payload: UpdateUserDto,
+    currentUser: AuthUser,
+    file?: Express.Multer.File,
+  ) {
     const existingUser = await this.prisma.user.findUnique({
       where: {
         id,
@@ -186,84 +198,140 @@ export class UsersService {
         id: true,
         role: true,
         status: true,
+        avatarUrl: true,
+        profile: {
+          select: {
+            avatarUrl: true,
+          },
+        },
       },
     });
 
     if (!existingUser) {
+      await deleteUploadedFile(file);
       throw new NotFoundException('User topilmadi');
     }
 
-    const isSelf = currentUser.id === id;
-    const isAdmin = currentUser.role === UserRole.ADMIN;
-    const isSuperAdmin = currentUser.role === UserRole.SUPERADMIN;
+    try {
+      const isSelf = currentUser.id === id;
+      const isAdmin = currentUser.role === UserRole.ADMIN;
+      const isSuperAdmin = currentUser.role === UserRole.SUPERADMIN;
 
-    if (!isSelf && !isAdmin && !isSuperAdmin) {
-      throw new ForbiddenException("Siz faqat o'zingizni update qila olasiz");
-    }
+      if (!isSelf && !isAdmin && !isSuperAdmin) {
+        throw new ForbiddenException("Siz faqat o'zingizni update qila olasiz");
+      }
 
-    if (
-      currentUser.role === UserRole.ADMIN &&
-      existingUser.role === UserRole.SUPERADMIN
-    ) {
-      throw new ForbiddenException('Admin superadmin userni update qila olmaydi');
-    }
+      if (
+        currentUser.role === UserRole.ADMIN &&
+        existingUser.role === UserRole.SUPERADMIN
+      ) {
+        throw new ForbiddenException('Admin superadmin userni update qila olmaydi');
+      }
 
-    if (isSelf) {
+      if (isSelf) {
+        if (payload.role) {
+          throw new ForbiddenException("O'zingizni role o'zgartira olmaysiz");
+        }
+
+        if (payload.status) {
+          throw new ForbiddenException("O'zingizni status o'zgartira olmaysiz");
+        }
+      }
+
       if (payload.role) {
-        throw new ForbiddenException("O'zingizni role o'zgartira olmaysiz");
+        this.checkRoleManagePermission(payload.role, currentUser);
       }
 
-      if (payload.status) {
-        throw new ForbiddenException("O'zingizni status o'zgartira olmaysiz");
+      const fullName = payload.fullName?.trim();
+      const phone = payload.phone ? this.normalizePhone(payload.phone) : undefined;
+
+      const email =
+        payload.email !== undefined ? this.normalizeEmail(payload.email) : undefined;
+
+      if (phone || email) {
+        await this.checkUniquePhoneAndEmail(phone, email, id);
       }
+
+      const passwordHash = payload.password
+        ? await this.bcrypt.generateHashPass(payload.password)
+        : undefined;
+
+      const data: Prisma.UserUpdateInput = {
+        ...(fullName ? { fullName } : {}),
+        ...(phone ? { phone } : {}),
+        ...(payload.email !== undefined ? { email } : {}),
+        ...(passwordHash ? { passwordHash } : {}),
+        ...(payload.role ? { role: payload.role } : {}),
+        ...(payload.status ? { status: payload.status } : {}),
+        ...(payload.avatarUrl !== undefined ? { avatarUrl: payload.avatarUrl } : {}),
+
+        ...(payload.avatarUrl !== undefined
+          ? {
+              profile: {
+                upsert: {
+                  create: {
+                    avatarUrl: payload.avatarUrl,
+                    isCompleted: false,
+                  },
+                  update: {
+                    avatarUrl: payload.avatarUrl,
+                  },
+                },
+              },
+            }
+          : {}),
+
+        ...(payload.status === Status.DELETED ? { deletedAt: new Date() } : {}),
+
+        ...(payload.status && payload.status !== Status.DELETED
+          ? { deletedAt: null }
+          : {}),
+      };
+
+      await this.prisma.user.update({
+        where: {
+          id,
+        },
+        data,
+      });
+
+      if (file && existingUser.avatarUrl) {
+        await deleteFile(existingUser.avatarUrl).catch(() => undefined);
+      }
+
+      if (
+        file &&
+        existingUser.profile?.avatarUrl &&
+        existingUser.profile.avatarUrl !== existingUser.avatarUrl
+      ) {
+        await deleteFile(existingUser.profile.avatarUrl).catch(() => undefined);
+      }
+
+      return {
+        success: true,
+        message: 'User updated successfully',
+      };
+    } catch (error: any) {
+      await deleteUploadedFile(file);
+
+      if (error?.code === 'P2002') {
+        const target = error?.meta?.target ?? [];
+
+        if (target.includes('phone') || target.includes('email')) {
+          throw new ConflictException('Phone or email already used');
+        }
+      }
+
+      if (
+        error instanceof ConflictException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('User update failed');
     }
-
-    if (payload.role) {
-      this.checkRoleManagePermission(payload.role, currentUser);
-    }
-
-    const fullName = payload.fullName?.trim();
-    const phone = payload.phone ? this.normalizePhone(payload.phone) : undefined;
-
-    const email =
-      payload.email !== undefined ? this.normalizeEmail(payload.email) : undefined;
-
-    if (phone || email) {
-      await this.checkUniquePhoneAndEmail(phone, email, id);
-    }
-
-    const passwordHash = payload.password
-      ? await this.bcrypt.generateHashPass(payload.password)
-      : undefined;
-
-    const data: Prisma.UserUpdateInput = {
-      ...(fullName ? { fullName } : {}),
-      ...(phone ? { phone } : {}),
-      ...(payload.email !== undefined ? { email } : {}),
-      ...(passwordHash ? { passwordHash } : {}),
-      ...(payload.role ? { role: payload.role } : {}),
-      ...(payload.status ? { status: payload.status } : {}),
-
-      ...(payload.status === Status.DELETED ? { deletedAt: new Date() } : {}),
-
-      ...(payload.status && payload.status !== Status.DELETED
-        ? { deletedAt: null }
-        : {}),
-    };
-
-
-
-    const user = await this.prisma.user.update({
-      where: {
-        id,
-      },
-      data,
-    });
-
-    return {
-      success: true,
-      message: 'User updated successfully',
-    };
   }
 
   async deleteUser(id: number, currentUser: AuthUser) {
@@ -321,7 +389,9 @@ export class UsersService {
         targetUser.role === UserRole.SUPERADMIN ||
         targetUser.role === UserRole.ADMIN
       ) {
-        throw new ForbiddenException('Admin superadmin yoki admin userni delete qila olmaydi');
+        throw new ForbiddenException(
+          'Admin superadmin yoki admin userni delete qila olmaydi',
+        );
       }
 
       return;
@@ -336,23 +406,24 @@ export class UsersService {
     }
 
     if (currentUser.role === UserRole.SUPERADMIN) {
-      return
-    }
-    if (role === UserRole.ADMIN) {
-      if (currentUser.role !== UserRole.SUPERADMIN) {
-        throw new ForbiddenException('Admin role faqat superadmin tomonidan beriladi');
-      }
-
       return;
     }
 
-    if (role === UserRole.OPERATOR || role === UserRole.TEAM_MANAGER) {
+    if (role === UserRole.ADMIN) {
+      throw new ForbiddenException('Admin role faqat superadmin tomonidan beriladi');
+    }
+
+    if (
+      role === UserRole.OPERATOR ||
+      role === UserRole.TEAM_MANAGER ||
+      role === UserRole.RACER
+    ) {
       if (
         currentUser.role !== UserRole.ADMIN &&
         currentUser.role !== UserRole.SUPERADMIN
       ) {
         throw new ForbiddenException(
-          'Operator yoki team manager role faqat admin yoki superadmin tomonidan beriladi',
+          'Operator, team manager yoki racer role faqat admin yoki superadmin tomonidan beriladi',
         );
       }
 
@@ -367,7 +438,6 @@ export class UsersService {
     email?: string,
     ignoreUserId?: number,
   ) {
-    // Agar phone ham, email ham kelmasa, tekshirish shart emas.
     if (!phone && !email) {
       return;
     }
@@ -376,17 +446,13 @@ export class UsersService {
       where: {
         ...(ignoreUserId
           ? {
-            id: {
-              not: ignoreUserId,
-            },
-          }
+              id: {
+                not: ignoreUserId,
+              },
+            }
           : {}),
 
-        OR: [
-          ...(phone ? [{ phone }] : []),
-
-          ...(email ? [{ email }] : [])
-        ],
+        OR: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])],
       },
       select: {
         id: true,
@@ -411,7 +477,6 @@ export class UsersService {
   }
 
   private normalizePhone(phone: string) {
-
     const digits = phone.replace(/\D/g, '');
 
     if (digits.startsWith('998')) {
@@ -426,7 +491,6 @@ export class UsersService {
   }
 
   private normalizeEmail(email?: string) {
-
     const cleanEmail = email?.trim().toLowerCase();
 
     if (!cleanEmail) {
@@ -436,12 +500,13 @@ export class UsersService {
     return cleanEmail;
   }
 
-  private userListSelect() {
-
+  private userListSelect(): Prisma.UserSelect {
     return {
       id: true,
       fullName: true,
+      phone: true,
       email: true,
+      avatarUrl: true,
       role: true,
       status: true,
       lastLoginAt: true,
@@ -468,18 +533,19 @@ export class UsersService {
     };
   }
 
-  private userDetailSelect() {
-
+  private userDetailSelect(): Prisma.UserSelect {
     return {
       id: true,
       fullName: true,
       phone: true,
       email: true,
+      avatarUrl: true,
       role: true,
       status: true,
       lastLoginAt: true,
       deletedAt: true,
       createdAt: true,
+      updatedAt: true,
 
       profile: {
         select: {
@@ -494,10 +560,9 @@ export class UsersService {
         },
       },
 
-      // Detailda oxirgi 5 ta sessionni ko‘rsatamiz.
       userSessions: {
         orderBy: {
-          createdAt: 'desc' as const,
+          createdAt: 'desc',
         },
         take: 5,
         select: {
@@ -511,13 +576,14 @@ export class UsersService {
       },
     };
   }
-  
+
   private formatUserListItem(user: any) {
     return {
       id: user.id,
       fullName: user.fullName,
       phone: user.phone,
       email: user.email,
+      avatarUrl: user.avatarUrl,
       role: user.role,
       status: user.status,
       lastLoginAt: user.lastLoginAt,

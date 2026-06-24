@@ -42,6 +42,14 @@ export class UpdateUserDto {
   role?: UserRole;
 
   @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+  })
+  @IsOptional()
+  @IsString()
+  avatarUrl?: string;
+
+  @ApiPropertyOptional({
     enum: Status,
     example: Status.ACTIVE,
   })
