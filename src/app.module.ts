@@ -10,6 +10,9 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
+import { VehicleMaintenceModule } from './modules/vehicle-maintence/vehicle-maintence.module';
+import { ArenaModule } from './modules/arena/arena.module';
+
 
 
 @Module({
@@ -29,7 +32,9 @@ import { VehiclesModule } from './modules/vehicles/vehicles.module';
     SeedModule,
     ProfilesModule,
     CategoriesModule,
-    VehiclesModule
+    VehiclesModule,
+    VehicleMaintenceModule,
+    ArenaModule
   ]
 })
 export class AppModule { }

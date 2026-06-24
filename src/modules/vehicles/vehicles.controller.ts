@@ -82,7 +82,7 @@ export class VehiclesController {
       getImageUploadOptions({
         folder: 'vehicles',
         prefix: 'vehicle',
-        maxSizeMb: 5,
+        maxSizeMb: 10,
       }) as any,
     ),
   )
@@ -115,7 +115,7 @@ export class VehiclesController {
       getImageUploadOptions({
         folder: 'vehicles',
         prefix: 'vehicle',
-        maxSizeMb: 5,
+        maxSizeMb: 10,
       }) as any,
     ),
   )

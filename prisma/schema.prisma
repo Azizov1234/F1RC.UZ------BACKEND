@@ -51,6 +51,17 @@ enum VehicleMaintenanceStatus {
   CANCELLED
 }
 
+enum ArenaZoneType {
+  START_GRID
+  PIT_LANE
+  RALLY_ZONE
+  FINISH_LINE
+  SPECTATOR_ZONE
+  SERVICE_ZONE
+  CONTROL_ROOM
+  OTHER
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   fullName     String
@@ -133,7 +144,8 @@ model RacingCategory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  vehicles Vehicle[]
+  vehicles     Vehicle[]
+  trackLayouts TrackLayout[]
 
   @@index([isActive])
   @@index([sortOrder])
@@ -154,8 +166,8 @@ model Vehicle {
   status             VehicleStatus       @default(AVAILABLE)
 
   description String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -193,4 +205,83 @@ model VehicleMaintenance {
   @@index([status])
   @@index([startedAt])
   @@index([resolvedAt])
+}
+
+model Arena {
+  id            Int     @id @default(autoincrement())
+  name          String
+  slug          String  @unique
+  address       String?
+  city          String?
+  description   String?
+  coverImageUrl String?
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trackLayouts TrackLayout[]
+  zones        ArenaZone[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@index([city])
+}
+
+model TrackLayout {
+  id         Int  @id @default(autoincrement())
+  arenaId    Int
+  categoryId Int?
+
+  name         String
+  slug         String
+  description  String?
+  lengthMeters Int?
+  difficulty   ExperienceLevel?
+  imageUrl     String?
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  arena    Arena           @relation(fields: [arenaId], references: [id])
+  category RacingCategory? @relation(fields: [categoryId], references: [id])
+  zones    ArenaZone[]
+
+  @@unique([arenaId, slug])
+  @@index([arenaId])
+  @@index([categoryId])
+  @@index([difficulty])
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model ArenaZone {
+  id            Int  @id @default(autoincrement())
+  arenaId       Int
+  trackLayoutId Int?
+
+  name        String
+  description String?
+  zoneType    ArenaZoneType
+  imageUrl    String?
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  arena       Arena        @relation(fields: [arenaId], references: [id])
+  trackLayout TrackLayout? @relation(fields: [trackLayoutId], references: [id])
+
+  @@index([arenaId])
+  @@index([trackLayoutId])
+  @@index([zoneType])
+  @@index([isActive])
+  @@index([sortOrder])
 }
