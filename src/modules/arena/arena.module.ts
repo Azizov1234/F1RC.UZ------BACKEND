@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ArenaService } from './arena.service';
-import { ArenaController } from './arena.controller';
+import { ArenasController } from './arena.controller';
+import { ArenasService } from './arena.service';
 
 @Module({
-  controllers: [ArenaController],
-  providers: [ArenaService],
+  controllers: [ArenasController],
+  providers: [ArenasService],
 })
 export class ArenaModule {}
