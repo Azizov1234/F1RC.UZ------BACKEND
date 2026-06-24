@@ -441,7 +441,6 @@ export class UsersService {
     return {
       id: true,
       fullName: true,
-      phone: true,
       email: true,
       role: true,
       status: true,
